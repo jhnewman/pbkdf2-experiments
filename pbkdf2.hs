@@ -18,13 +18,14 @@ data Hasher = Hasher ([Word8] -> [Word8] -> [Word8]) Int
 hmac_sha1' = Hasher hmac_sha1 20
 
 -- Implementation of pbkdf2 algorithm speicified in rfc2898
+-- lazy evaluation really simplifies the code a lot!
 pbkdf2 :: Hasher -> Int -> Int -> [Word8] -> [Word8] -> [Word8]
 pbkdf2 (Hasher prf hLen) c dkLen pass salt = dk where
-  ts   = map f [1..]
-  f i  = foldr1 (zipWith xor) . take c $ us where
-    us = unfold (prf pass) (salt ++  encode i)
-    encode x = word32ToOctets . fromIntegral $ x
-  dk   = take dkLen . foldr1 (++) $ ts
+  ts   = map f [1..]                              -- infinite list of blocks
+  f i  = foldr1 (zipWith xor) . take c $ us where -- make block from index
+    us = unfold (prf pass) (salt ++  encode i)    -- hash of a hash of a hash...
+    encode x = word32ToOctets . fromIntegral $ x  -- turn i into a [Word8]
+  dk   = take dkLen . concat $ ts                 -- derived key 
 
 -- atlassian_pbkdf2_sha is pbkdf2 with:
 --   iterations: 10000
