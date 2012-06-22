@@ -3,171 +3,62 @@
 > import qualified Data.ByteString.Base64 as Base64
 > import qualified Data.ByteString as BS
 > import Data.HMAC (hmac_sha1)
-
-> import PBKDF2Fixed
-
 > import Data.List (unfoldr)
 > import Data.Bits (xor, shiftR)
 
+> data Hash = Hash {hashFun ::[Word8] -> [Word8] -> [Word8], len::Int}
 
+> hmac_sha1' = Hash hmac_sha1 20
 
- mypbkdf c dkLen pass salt = 1 where
-
-> dkLen = 20
-> c = 1
-> salt' :: [Word8]
-> salt' = char2word8 "salt"
-> pass' :: [Word8]
-> pass' = char2word8 "password"
-> hLen = 20
-> prf  = hmac_sha1
-> l    = ceiling $ fromIntegral dkLen / fromIntegral hLen -- length (# of blocks in derived key)
-> r    = dkLen - (l - 1) * hLen -- remainder(# of octets in last block)
-> ts   = map f [1..l]
-> f i  = foldr1 xor' $ take c (us i)
-> us i = unfold (prf pass') (salt' ++ (word32ToOctets . fromIntegral $ i))
-> xor' = zipWith xor
-> dk   = take dkLen . foldr1 (++) $ ts
-
-int2word8 
-
- dk   = 
-
-
-nextu u = prf p u
-
-unfoldr (Just . prf pass)
+> pbkdf2 (Hash prf hLen) c dkLen pass salt = dk where
+>   l    = ceiling $ fromIntegral dkLen / fromIntegral hLen
+>   ts   = map f [1..l]
+>   f    = foldr1 (zipWith xor) . take c . us 
+>   us i = unfold (prf pass) (salt ++ (word32ToOctets . fromIntegral $ i))
+>   dk   = take dkLen . foldr1 (++) $ ts
 
 > unfold f = unfoldr (\x -> let x' = f x in Just (x', x'))  
-
->   
-
-[1..l]
-
 
 > char2word8 :: [Char] -> [Word8]
 > char2word8 = map (toEnum.fromEnum)
 
-> rawSalt :: [Word8]
 > rawSalt = [0x0d, 0x02, 0x17, 0x25, 0x4d, 0x37, 0xf2, 0xee, 0x0f, 0xec, 0x57, 0x6c, 0xb8, 0x54, 0xd8, 0xff]
 
-> rawPass :: [Word8]
 > rawPass = char2word8 "password"
 
-> pass = Password rawPass
-> salt = Salt rawSalt
-
-> bar = Base64.encode . BS.pack $ checksum where 
->   HashedPass checksum = atlassian_pbkdf2_sha pass salt
+> bar = Base64.encode . BS.pack $ atlassian_pbkdf2_sha rawPass rawSalt 
 
 iterations: 10000
 output size: 32
 
-> atlassian_pbkdf2_sha = pbkdf2' (hmac_sha1, 20) 10000 32
+> atlassian_pbkdf2_sha pass salt = salt ++ pbkdf2 hmac_sha1' 10000 32 pass salt
 
- import qualified Data.Digest.SHA1 as SHA1
- import Numeric
- import Data.Bits
- import Data.Digest.Pure.SHA
- import Codec.Utils (toTwosComp)
+> test expected iterations pass salt = expected == actual where
+>   actual = pbkdf2 hmac_sha1' iterations (length expected) (char2word8 pass) (char2word8 salt)
 
-  test expected iterations pass salt
-
-> expected1 :: [Word8]
-> expected1 = [0x0c, 0x60, 0xc8, 0x0f, 0x96, 0x1f, 0x0e, 0x71, 0xf3, 0xa9, 0xb5, 0x24, 0xaf, 0x60, 0x12, 0x06, 0x2f, 0xe0, 0x37, 0xa6]
-
-> test = pbkdf2' (hmac_sha1, 20) 1 20 pass testSalt where
->   testSalt = (Salt . char2word8 $ "salt")
-
-> test2 = pbkdf2' (hmac_sha1, 20) 2 20 pass testSalt where
->   testSalt = (Salt . char2word8 $ "salt")
-
-> test3 = pbkdf2' (hmac_sha1, 20) 4096 25 pass testSalt where
->   testSalt = (Salt . char2word8 $ "saltSALTsaltSALTsaltSALTsaltSALTsalt")
->   testPass = (Password . char2word8 $ "passwordPASSWORDpassword")
-
-change logical or to concatenation..
-
- test = pbkdf2' (sha512, 20) 1 20 pass testSalt where
-   testSalt = (Salt . char2word8 $ "salt")
-
-
-
-BS.unpack . handle . Base64.decode . BS.pack . char2word8 $ rawSalt
-
-salt in hexadecimal octects...
-
- foo :: String -> [Word8]
- foo = map (fromInteger . handle . readHex . return ) where
-   handle r = case r of
-     [(x, "")] -> x
-     _         -> error "bad parse"
-
- handle r = case r of 
-   Left msg -> error msg
-   Right x  -> x
-
-a sha1 digest is 20 bytes 
-
-before I forget, both hmac_sha1 and utils.get_prf("hmac-sha1") produce the same results.
-
-proof:
-
-$ hmac_sha1("password", bytes("salt"))
-'\xa2\xbc\x8e\r\x99vB\xc2]\xabA\x990\xb15\x83(\xbb\x93\xb9'
-$ hex(162)
-'0xa2'
-$ hex(188)
-'0xbc'
-
-*Main> hmac_sha1 (char2word8 "password")  (char2word8 "salt")
-[162,188,142,13,153,118,66,194,93,171,65,153,48,177,53,131,40,187,147,185]
-
-
-
-
-
-
-The salt needs to be 16 bytes
-
- atlassian_pbkdf2_sha = pbkdf2' (hmac_sha1, 20) 10000 32
-
-    this is the code that calculates the digest in the passlib library...
-    it seems straightforward, but what are those translate things?   
-
-    digest_const = getattr(hashlib, digest, None)
-    if not digest_const:
-        raise ValueError("unknown hash algorithm: %r" % (digest,))
-    tmp = digest_const()
-    block_size = tmp.block_size
-    assert block_size >= 16, "unacceptably low block size"
-    digest_size = tmp.digest_size
-    del tmp
-    def prf(key, msg):
-        # simplified version of stdlib's hmac module
-        if len(key) > block_size:
-            key = digest_const(key).digest()
-        key += _BNULL * (block_size - len(key))
-        tmp = digest_const(key.translate(_trans_36) + msg).digest()
-        return digest_const(key.translate(_trans_5C) + tmp).digest()
-    tag_wrapper(prf)
-    return prf, digest_size
-
-
-well, this sha1 is working at least
-
-remember when I tried to reimpliment hmac? yeah i don't either...
-
- prf key msg = r  where
-   key'  = if length(key) > block_size then sha1 key else key
-   key'' = key' ++ (take (block_size - length(key')) (repeat 0xffffffff))
-   tmp   = sha1 ((map (\x -> xor x 0x36) key) ++ msg)
-   r     = sha1 ((map (\x -> xor x 0x5C) key) ++ tmp)
-   block_size = 64
-
- sha1 = word160ToOctets . SHA1.hash
-
- word160ToOctets (SHA1.Word160 a b c d e) = word32ToOctets a ++ word32ToOctets b ++ word32ToOctets c ++ word32ToOctets d ++ word32ToOctets e
+> tests = foldr (&&) True [
+>     test 
+>       [0x0c, 0x60, 0xc8, 0x0f, 0x96, 0x1f, 0x0e, 0x71, 0xf3, 0xa9, 0xb5, 0x24, 0xaf, 0x60, 0x12, 0x06, 0x2f, 0xe0, 0x37, 0xa6]
+>       1
+>       "password"
+>       "salt",
+>     test 
+>       [0xea, 0x6c, 0x01, 0x4d, 0xc7, 0x2d, 0x6f, 0x8c, 0xcd, 0x1e, 0xd9, 0x2a, 0xce, 0x1d, 0x41, 0xf0, 0xd8, 0xde, 0x89, 0x57]
+>       2
+>       "password"
+>       "salt",
+>     test
+>       [0x4b, 0x00, 0x79, 0x01, 0xb7, 0x65, 0x48, 0x9a, 0xbe, 0xad, 0x49, 0xd9, 0x26, 0xf7, 0x21, 0xd0, 0x65, 0xa4, 0x29, 0xc1]
+>       4096
+>       "password"
+>       "salt",
+>     test
+>       [0x3d, 0x2e, 0xec, 0x4f, 0xe4, 0x1c, 0x84, 0x9b, 0x80, 0xc8, 0xd8, 0x36, 0x62, 0xc0, 0xe4, 0x4a, 0x8b, 0x29, 0x1a, 0x96, 0x4c, 0xf2, 0xf0, 0x70, 0x38]
+>       4096
+>       "passwordPASSWORDpassword"
+>       "saltSALTsaltSALTsaltSALTsaltSALTsalt"
+>     
+>   ]
 
 > word32ToOctets :: Word32 -> [Word8]
 > word32ToOctets w = 
