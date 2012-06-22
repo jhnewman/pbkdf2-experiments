@@ -20,10 +20,10 @@ hmac_sha1' = Hasher hmac_sha1 20
 -- Implementation of pbkdf2 algorithm speicified in rfc2898
 pbkdf2 :: Hasher -> Int -> Int -> [Word8] -> [Word8] -> [Word8]
 pbkdf2 (Hasher prf hLen) c dkLen pass salt = dk where
-  l    = ceiling $ fromIntegral dkLen / fromIntegral hLen
-  ts   = map f [1..l]
-  f    = foldr1 (zipWith xor) . take c . us 
-  us i = unfold (prf pass) (salt ++ (word32ToOctets . fromIntegral $ i))
+  ts   = map f [1..]
+  f i  = foldr1 (zipWith xor) . take c $ us where
+    us = unfold (prf pass) (salt ++  encode i)
+    encode x = word32ToOctets . fromIntegral $ x
   dk   = take dkLen . foldr1 (++) $ ts
 
 -- atlassian_pbkdf2_sha is pbkdf2 with:
