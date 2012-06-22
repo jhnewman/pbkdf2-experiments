@@ -3,7 +3,47 @@
 > import qualified Data.ByteString.Base64 as Base64
 > import qualified Data.ByteString as BS
 > import Data.HMAC (hmac_sha1)
+
 > import PBKDF2Fixed
+
+> import Data.List (unfoldr)
+> import Data.Bits (xor, shiftR)
+
+
+
+ mypbkdf c dkLen pass salt = 1 where
+
+> dkLen = 20
+> c = 1
+> salt' :: [Word8]
+> salt' = char2word8 "salt"
+> pass' :: [Word8]
+> pass' = char2word8 "password"
+> hLen = 20
+> prf  = hmac_sha1
+> l    = ceiling $ fromIntegral dkLen / fromIntegral hLen -- length (# of blocks in derived key)
+> r    = dkLen - (l - 1) * hLen -- remainder(# of octets in last block)
+> ts   = map f [1..l]
+> f i  = foldr1 xor' $ take c (us i)
+> us i = unfold (prf pass') (salt' ++ (word32ToOctets . fromIntegral $ i))
+> xor' = zipWith xor
+> dk   = take dkLen . foldr1 (++) $ ts
+
+int2word8 
+
+ dk   = 
+
+
+nextu u = prf p u
+
+unfoldr (Just . prf pass)
+
+> unfold f = unfoldr (\x -> let x' = f x in Just (x', x'))  
+
+>   
+
+[1..l]
+
 
 > char2word8 :: [Char] -> [Word8]
 > char2word8 = map (toEnum.fromEnum)
@@ -30,6 +70,11 @@ output size: 32
  import Data.Bits
  import Data.Digest.Pure.SHA
  import Codec.Utils (toTwosComp)
+
+  test expected iterations pass salt
+
+> expected1 :: [Word8]
+> expected1 = [0x0c, 0x60, 0xc8, 0x0f, 0x96, 0x1f, 0x0e, 0x71, 0xf3, 0xa9, 0xb5, 0x24, 0xaf, 0x60, 0x12, 0x06, 0x2f, 0xe0, 0x37, 0xa6]
 
 > test = pbkdf2' (hmac_sha1, 20) 1 20 pass testSalt where
 >   testSalt = (Salt . char2word8 $ "salt")
@@ -124,12 +169,12 @@ remember when I tried to reimpliment hmac? yeah i don't either...
 
  word160ToOctets (SHA1.Word160 a b c d e) = word32ToOctets a ++ word32ToOctets b ++ word32ToOctets c ++ word32ToOctets d ++ word32ToOctets e
 
- word32ToOctets :: Word32 -> [Word8]
- word32ToOctets w = 
-    [ fromIntegral (w `shiftR` 24)
-    , fromIntegral (w `shiftR` 16)
-    , fromIntegral (w `shiftR` 8)
-    , fromIntegral w
-    ]
+> word32ToOctets :: Word32 -> [Word8]
+> word32ToOctets w = 
+>    [ fromIntegral (w `shiftR` 24)
+>    , fromIntegral (w `shiftR` 16)
+>    , fromIntegral (w `shiftR` 8)
+>    , fromIntegral w
+>    ]
 
 
