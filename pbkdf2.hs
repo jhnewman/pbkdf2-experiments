@@ -1,7 +1,7 @@
-
-module BPKDF2 (
+module Crypto.PBKDF2 (
   Hasher,
-  pbkdf2
+  pbkdf2,
+  atlassian_pbkdf2_sha
 ) where
 
 import Data.Word
@@ -11,31 +11,31 @@ import Data.HMAC (hmac_sha1)
 import Data.List (unfoldr)
 import Data.Bits (xor, shiftR)
 
--- A hash function and the length of the output of the function
-data Hasher = Hasher ([Word8] -> [Word8] -> [Word8]) Int
-
--- For example, hmac_sha1 outputs 160 bits, or 20 octets
-hmac_sha1' = Hasher hmac_sha1 20
+type Hasher = [Word8] -> [Word8] -> [Word8]
 
 -- Implementation of pbkdf2 algorithm speicified in rfc2898
 -- lazy evaluation really simplifies the code a lot!
-pbkdf2 :: Hasher -> Int -> Int -> [Word8] -> [Word8] -> [Word8]
-pbkdf2 (Hasher prf hLen) c dkLen pass salt = dk where
+-- removes the need for all of these bounds like hLen, l, r
+-- Note that I do skip the bounds check dkLen !> (2^32 - 1) * hLen
+pbkdf2 :: Hasher -> Int -> Int -> Hasher
+pbkdf2 prf c dkLen pass salt = dk where
   ts   = map f [1..]                              -- infinite list of blocks
   f i  = foldr1 (zipWith xor) . take c $ us where -- make block from index
-    us = unfold (prf pass) (salt ++  encode i)    -- hash of a hash of a hash...
-    encode x = word32ToOctets . fromIntegral $ x  -- turn i into a [Word8]
+    us = unfold (prf pass) (salt ++  encodeInt i) -- hash of a hash of a hash...
   dk   = take dkLen . concat $ ts                 -- derived key 
+
+
+encodeInt x = word32ToOctets . fromIntegral $ x  -- turn i into a [Word8]
 
 -- atlassian_pbkdf2_sha is pbkdf2 with:
 --   iterations: 10000
 --   output size: 32
 --   prf: hmac_sha1
 atlassian_pbkdf2_sha pass salt = BS.unpack . Base64.encode . BS.pack $salt ++ checksum where
-  checksum = pbkdf2 hmac_sha1' 10000 32 pass salt
+  checksum = pbkdf2 hmac_sha1 10000 32 pass salt
 
 test expected iterations pass salt = expected == actual where
-  actual = pbkdf2 hmac_sha1' iterations (length expected) (char2word8 pass) (char2word8 salt)
+  actual = pbkdf2 hmac_sha1 iterations (length expected) (char2word8 pass) (char2word8 salt)
 
 -- Tests Vectors specified in rfc6070
 tests = foldr (&&) True [
